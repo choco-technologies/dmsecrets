@@ -3,3 +3,4 @@ $include https://github.com/choco-technologies/dmsecrets/releases/download/vlate
 
 # Module entry with version placeholder - expanded by $version-available
 dmsecrets https://github.com/choco-technologies/dmsecrets/releases/download/v<version>/dmsecrets-v<version>-<arch_name>.zip
+secrets https://github.com/choco-technologies/dmsecrets/releases/download/v<version>/secrets-v<version>-<arch_name>.zip

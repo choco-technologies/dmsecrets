@@ -610,4 +610,41 @@ DMOD_TEST_STEP(a_vault_without_the_flag_ignores_the_device_secret)
     DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "k", value, sizeof(value), &length), -EACCES);      /* locked: nobody unlocks it */
     dmsecrets_close(v);
     forget_devkey();
+/* ---- The secrets tool (run as a module; it asks for a passphrase only once a vault is opened) ---- */
+
+DMOD_TEST_STEP(tool_prints_its_usage)
+{
+    char* help[] = { "secrets", "--help" };
+    char* nothing[] = { "secrets", "frobnicate" };
+    char* no_name[] = { "secrets", "get" };
+
+    DMOD_TEST_EXPECT_EQ(Dmod_RunModule("secrets", 2, help), 0);
+    DMOD_TEST_EXPECT_NE(Dmod_RunModule("secrets", 2, nothing), 0);
+    DMOD_TEST_EXPECT_NE(Dmod_RunModule("secrets", 2, no_name), 0);
+    DMOD_TEST_EXPECT_FALSE(Dmod_IsModuleLoaded("secrets"));
+}
+
+DMOD_TEST_STEP(tool_without_a_vault_fails_before_asking_anything)
+{
+    char* nowhere[] = { "secrets", "list" };                                   /* no path: the environment is empty */
+    char* missing[] = { "secrets", "-f", "/tmp/dmsecrets_test_missing.vault", "list" };
+
+    DMOD_TEST_EXPECT_NE(Dmod_RunModule("secrets", 2, nowhere), 0);
+    DMOD_TEST_EXPECT_NE(Dmod_RunModule("secrets", 4, missing), 0);
+}
+
+DMOD_TEST_STEP(tool_does_not_create_over_a_vault)
+{
+    char* create[] = { "secrets", "-f", VAULT_PATH, "create" };
+
+    DMOD_TEST_EXPECT_TRUE(make_vault());
+    DMOD_TEST_EXPECT_NE(Dmod_RunModule("secrets", 4, create), 0);               /* "exists already", no prompt */
+
+    /* and the vault is what it was */
+    dmsecrets_t v = open_vault(VAULT_PATH, 0);
+    char value[16];
+    size_t length = 0;
+    DMOD_TEST_EXPECT_EQ(dmsecrets_unlock(v, PASS, PASS_LEN), 0);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "wifi/Home", value, sizeof(value), &length), 0);
+    dmsecrets_close(v);
 }
