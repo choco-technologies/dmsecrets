@@ -79,3 +79,10 @@ dmod_link_modules(${DMOD_MODULE_NAME}
 )
 enable_testing()
 add_subdirectory(tests)
+
+# ======================================================================
+#               secrets Tool
+# ======================================================================
+# On-target application: the vaults from the shell (see tools/secrets/README.md).
+add_subdirectory(tools/secrets)
+
