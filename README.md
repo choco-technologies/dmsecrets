@@ -3,11 +3,22 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/choco-technologies/dmsecrets/actions/workflows/ci.yml/badge.svg)](https://github.com/choco-technologies/dmsecrets/actions/workflows/ci.yml)
 
-dmsecrets DMOD library module.
+A store of secrets - passwords, keys, tokens - in encrypted vaults, for
+[DMOD](https://github.com/choco-technologies/dmod).
 
 ## Description
 
-TODO: describe what this module does.
+A **vault** is a file at a path the caller chooses, holding named records
+encrypted (AES-256-GCM, key from a passphrase by PBKDF2) with dmcrypto. A
+program can open several vaults - one per library, per purpose, per place - and
+a library gives the path of its own or none: the path then comes from the
+environment (`DMSECRETS_<DOMAIN>_PATH`, then `DMSECRETS_PATH`). A vault can
+unlock itself through a passphrase provider the caller supplies. See
+[docs/api-reference.md](docs/api-reference.md) and the file format in
+[docs/format.md](docs/format.md).
+
+**Status:** the interface (`include/`) and the path resolution are done; the
+vault itself is TODO (every other function returns `-ENOSYS`).
 
 ## Building
 
