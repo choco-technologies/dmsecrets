@@ -483,3 +483,131 @@ DMOD_TEST_STEP(a_vault_opens_by_its_domain_from_the_environment)
     DMOD_TEST_EXPECT_EQ(strcmp(path, VAULT_PATH), 0);
     dmsecrets_close(v);
 }
+
+/* ---- DMSECRETS_OPEN_DEVICE_KEY: unlocked by a key from the device secret ---- */
+
+#define DEVKEY_FILE "/tmp/dmsecrets_test_devkey"
+
+static void write_devkey(const char *secret)
+{
+    void *file = Dmod_FileOpen(DEVKEY_FILE, "w+");
+
+    Dmod_FileWrite(secret, 1, strlen(secret), file);
+    Dmod_FileClose(file);
+    Dmod_SetEnv("DMSECRETS_DEVKEY_PATH", DEVKEY_FILE, 1);
+}
+
+static void forget_devkey(void)
+{
+    Dmod_FileRemove(DEVKEY_FILE);
+    Dmod_SetEnv("DMSECRETS_DEVKEY_PATH", "", 1);
+}
+
+static dmsecrets_t open_with_device_key(const char *domain, dmsecrets_passphrase_fn_t provider, void *context)
+{
+    dmsecrets_config_t config;
+    dmsecrets_t vault = NULL;
+
+    /* Field by field: the dmod loader does not relocate the pointers of a constant initializer
+     * the compiler copies from the module's data */
+    memset(&config, 0, sizeof(config));
+    config.path = VAULT_PATH;
+    config.domain = domain;
+    config.flags = DMSECRETS_OPEN_CREATE | DMSECRETS_OPEN_DEVICE_KEY;
+    config.passphrase_provider = provider;
+    config.provider_context = context;
+    return dmsecrets_open(&config, &vault) == 0 ? vault : NULL;
+}
+
+DMOD_TEST_STEP(the_device_key_creates_and_unlocks_a_vault_with_no_passphrase)
+{
+    char value[16];
+    size_t length = 0;
+
+    write_devkey("the device secret of this build");
+    dmsecrets_t v = open_with_device_key("wifi", NULL, NULL);
+    DMOD_TEST_EXPECT_NOT_NULL(v);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_set(v, "wifi/Home", "hunter2", 7), 0);        /* creates it, nobody typed anything */
+    DMOD_TEST_EXPECT_TRUE(dmsecrets_is_unlocked(v));
+    DMOD_TEST_EXPECT_EQ(dmsecrets_lock(v), 0);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "wifi/Home", value, sizeof(value), &length), 0);   /* and again */
+    DMOD_TEST_EXPECT_EQ(length, 7);
+    dmsecrets_close(v);
+
+    /* the next boot of the same firmware: the same secret, the same vault */
+    v = open_with_device_key("wifi", NULL, NULL);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "wifi/Home", value, sizeof(value), &length), 0);
+    dmsecrets_close(v);
+    forget_devkey();
+}
+
+DMOD_TEST_STEP(another_device_secret_or_domain_cannot_open_it)
+{
+    char value[16];
+    size_t length = 0;
+
+    write_devkey("the device secret of this build");
+    dmsecrets_t v = open_with_device_key("wifi", NULL, NULL);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_set(v, "k", "v", 1), 0);
+    dmsecrets_close(v);
+
+    write_devkey("the secret of ANOTHER firmware build");               /* a board flashed with another secret */
+    v = open_with_device_key("wifi", NULL, NULL);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "k", value, sizeof(value), &length), -EACCES);
+    dmsecrets_close(v);
+
+    write_devkey("the device secret of this build");
+    v = open_with_device_key("tls", NULL, NULL);                        /* the same secret, another domain's key */
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "k", value, sizeof(value), &length), -EACCES);
+    dmsecrets_close(v);
+
+    v = open_with_device_key(NULL, NULL, NULL);                         /* no domain: "default" */
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "k", value, sizeof(value), &length), -EACCES);
+    dmsecrets_close(v);
+
+    v = open_with_device_key("wifi", NULL, NULL);                       /* and the right one still works */
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "k", value, sizeof(value), &length), 0);
+    dmsecrets_close(v);
+    forget_devkey();
+}
+
+DMOD_TEST_STEP(without_a_device_secret_the_provider_is_asked_or_it_is_enodev)
+{
+    char value[16];
+    size_t length = 0;
+
+    forget_devkey();
+    dmsecrets_t v = open_with_device_key("wifi", NULL, NULL);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_set(v, "k", "v", 1), -ENODEV);        /* no node, nobody to ask */
+    DMOD_TEST_EXPECT_FALSE(dmsecrets_is_unlocked(v));
+    dmsecrets_close(v);
+
+    provider_calls = 0;
+    v = open_with_device_key("wifi", test_provider, PASS);              /* the provider takes over */
+    DMOD_TEST_EXPECT_EQ(dmsecrets_set(v, "k", "v", 1), 0);
+    DMOD_TEST_EXPECT_EQ(provider_calls, 1);
+    dmsecrets_close(v);
+
+    /* with the device secret there, the provider is not asked at all (and its vault is another one) */
+    write_devkey("the device secret of this build");
+    Dmod_FileRemove(VAULT_PATH);
+    provider_calls = 0;
+    v = open_with_device_key("wifi", test_provider, PASS);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_set(v, "k", "v", 1), 0);
+    DMOD_TEST_EXPECT_EQ(provider_calls, 0);
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "k", value, sizeof(value), &length), 0);
+    dmsecrets_close(v);
+    forget_devkey();
+}
+
+DMOD_TEST_STEP(a_vault_without_the_flag_ignores_the_device_secret)
+{
+    write_devkey("the device secret of this build");
+    dmsecrets_t v = open_vault(VAULT_PATH, DMSECRETS_OPEN_CREATE);
+    char value[8];
+    size_t length = 0;
+
+    DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "k", value, sizeof(value), &length), -EACCES);      /* locked: nobody unlocks it */
+    dmsecrets_close(v);
+    forget_devkey();
+}

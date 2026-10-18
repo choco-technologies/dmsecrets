@@ -47,6 +47,19 @@
 #define DMSECRETS_OPEN_READONLY (1u << 1)   /**< No record can be changed */
 
 /**
+ * The vault unlocks itself (when an operation needs it) with a key derived from the
+ * device secret - the node `/dev/devkey` (dmdevfs serves what dmod-boot was built with;
+ * `DMSECRETS_DEVKEY_PATH` in the environment names another node) - instead of a passphrase
+ * somebody types: HKDF-SHA256 of the secret, labelled "dmsecrets/v1/<domain>" (the config's
+ * domain, "default" without one), so every domain has a key of its own. A new vault is
+ * created under that key. The vault is then as safe as the device secret is (see the
+ * README): it protects a card or a copy of the file, not a running system.
+ * Where the node is not there (no device secret in the firmware) the passphrase provider is
+ * asked instead, when there is one; without one the operation returns -ENODEV.
+ */
+#define DMSECRETS_OPEN_DEVICE_KEY (1u << 2)
+
+/**
  * @brief Asks for the passphrase when the vault needs it.
  *
  * Fills passphrase (size bytes at most) and sets *length. creating is true when

@@ -30,6 +30,8 @@
 #define PASSPHRASE_MAX      256
 #define RECORD_OVERHEAD     3           /* name length (1) + value length (2) */
 #define VAULT_MAGIC         0x44535654
+#define DEVKEY_NODE         "/dev/devkey"
+#define DEVKEY_MAX          64          /* What dmdevfs serves at most */
 
 /* Header offsets */
 #define H_MAGIC             0
@@ -54,6 +56,7 @@ struct dmsecrets
     uint32_t                    magic;
     struct dmsecrets           *next;               /* The list of open vaults */
     char                       *path;
+    char                       *domain;             /* The key's label for DMSECRETS_OPEN_DEVICE_KEY, or NULL */
     uint32_t                    flags;
     dmsecrets_passphrase_fn_t   provider;
     void                       *provider_context;
@@ -446,17 +449,78 @@ static void lock_locked(struct dmsecrets *v)
     v->unlocked = false;
 }
 
-/* Unlocked, by the provider if need be */
+/* The passphrase of DMSECRETS_OPEN_DEVICE_KEY: HKDF-SHA256 of the device secret, labelled
+ * with the vault's domain, as 64 hex characters. -ENODEV when there is no device secret. */
+static int device_key_passphrase(const struct dmsecrets *v, char *out, size_t out_size, size_t *length)
+{
+    static const char hex[] = "0123456789abcdef";
+    const char *node = Dmod_GetEnv("DMSECRETS_DEVKEY_PATH");
+    uint8_t secret[DEVKEY_MAX], key[KEY_SIZE];
+    char info[16 + DMSECRETS_DOMAIN_MAX + 1] = "dmsecrets/v1/";
+    size_t info_length = strlen(info);
+
+    if (out_size < 2 * KEY_SIZE)
+        return -ENOSPC;
+    if (node == NULL || node[0] == '\0')
+        node = DEVKEY_NODE;
+
+    void *file = Dmod_FileOpen(node, "r");
+    if (file == NULL)
+        return -ENODEV;
+    size_t n = Dmod_FileRead(secret, 1, sizeof(secret), file);
+    Dmod_FileClose(file);
+    if (n == 0)
+        return -ENODEV;
+
+    const char *label = (v->domain != NULL) ? v->domain : "default";
+    if (strlen(label) > DMSECRETS_DOMAIN_MAX)
+    {
+        wipe(secret, sizeof(secret));
+        return -EINVAL;
+    }
+    memcpy(info + info_length, label, strlen(label) + 1);
+    info_length += strlen(label);
+
+    int result = dmcrypto_hkdf(DMCRYPTO_HASH_SHA256, secret, n, NULL, 0, info, info_length, key, sizeof(key));
+    wipe(secret, sizeof(secret));
+    if (result == 0)
+    {
+        for (size_t i = 0; i < KEY_SIZE; i++)
+        {
+            out[2 * i] = hex[key[i] >> 4];
+            out[2 * i + 1] = hex[key[i] & 0x0F];
+        }
+        *length = 2 * KEY_SIZE;
+    }
+    wipe(key, sizeof(key));
+    return result;
+}
+
+/* Unlocked: by the device key when the vault asks for it, else by the provider if need be */
 static int ensure_unlocked(struct dmsecrets *v)
 {
+    uint8_t passphrase[PASSPHRASE_MAX];
+    size_t length = 0;
+    int result;
+
     if (v->unlocked)
         return 0;
+
+    if ((v->flags & DMSECRETS_OPEN_DEVICE_KEY) != 0)
+    {
+        result = device_key_passphrase(v, (char *)passphrase, sizeof(passphrase), &length);
+        if (result == 0)
+            result = unlock_locked(v, passphrase, length);
+        wipe(passphrase, sizeof(passphrase));
+        if (result != -ENODEV || v->provider == NULL)
+            return result;                      /* unlocked, or no device secret and nobody else to ask */
+        length = 0;                             /* no device secret: the provider's passphrase */
+    }
+
     if (v->provider == NULL)
         return -EACCES;
 
-    uint8_t passphrase[PASSPHRASE_MAX];
-    size_t length = 0;
-    int result = v->provider(v->provider_context, !v->exists, passphrase, sizeof(passphrase), &length);
+    result = v->provider(v->provider_context, !v->exists, passphrase, sizeof(passphrase), &length);
     if (result == 0)
         result = (length == 0 || length > sizeof(passphrase)) ? -EINVAL : unlock_locked(v, passphrase, length);
     wipe(passphrase, sizeof(passphrase));
@@ -576,17 +640,19 @@ dmod_dmsecrets_api_declaration(1.0, int, _open, ( const dmsecrets_config_t* conf
     memset(v, 0, sizeof(*v));
     v->magic = VAULT_MAGIC;
     v->path = Dmod_StrDup(path);
+    v->domain = (config->domain != NULL && config->domain[0] != '\0') ? Dmod_StrDup(config->domain) : NULL;
     v->flags = config->flags;
     v->provider = config->passphrase_provider;
     v->provider_context = config->provider_context;
     v->lock = dmosi_mutex_create(false);
     v->exists = exists;
     v->capacity_units = exists ? get16(header + H_CAPACITY) : (uint16_t)(DEFAULT_CAPACITY / CAPACITY_UNIT);
-    if (v->path == NULL || v->lock == NULL)
+    if (v->path == NULL || v->lock == NULL || (config->domain != NULL && config->domain[0] != '\0' && v->domain == NULL))
     {
         if (v->lock != NULL)
             dmosi_mutex_destroy(v->lock);
         Dmod_Free(v->path);
+        Dmod_Free(v->domain);
         Dmod_Free(v);
         return -ENOMEM;
     }
@@ -599,6 +665,7 @@ dmod_dmsecrets_api_declaration(1.0, int, _open, ( const dmsecrets_config_t* conf
             dmosi_mutex_unlock(g_lock);
             dmosi_mutex_destroy(v->lock);
             Dmod_Free(v->path);
+            Dmod_Free(v->domain);
             Dmod_Free(v);
             return -EBUSY;
         }
@@ -631,6 +698,7 @@ dmod_dmsecrets_api_declaration(1.0, void, _close, ( dmsecrets_t vault ))
     dmosi_mutex_unlock(vault->lock);
     dmosi_mutex_destroy(vault->lock);
     Dmod_Free(vault->path);
+    Dmod_Free(vault->domain);
     vault->magic = 0;
     Dmod_Free(vault);
 }
