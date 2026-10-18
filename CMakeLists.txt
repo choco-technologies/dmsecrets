@@ -72,9 +72,10 @@ target_include_directories(${DMOD_MODULE_NAME}_if INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# To depend on another module's headers, use:
-#   dmod_link_modules(${DMOD_MODULE_NAME}
-#       other_module@1.0
-#   )
+# dmcrypto: PBKDF2, AES-GCM, random bytes; dmosi: the locks.
+dmod_link_modules(${DMOD_MODULE_NAME}
+    dmcrypto
+    dmosi
+)
 enable_testing()
 add_subdirectory(tests)

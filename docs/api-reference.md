@@ -71,6 +71,6 @@ caller's error message. The rest is in `dmsecrets_types.h`.
 
 ## Depends on
 
-dmcrypto (AES-GCM, PBKDF2, random bytes). Writing a vault needs an entropy
+dmcrypto (AES-GCM, PBKDF2, random bytes), dmosi (locks). Writing a vault needs an entropy
 source (`dmcrypto_set_entropy()`, the dmcrypto driver's `entropy=`): without one
 `set` / `unlock` of a new vault return `-ENODEV`.
