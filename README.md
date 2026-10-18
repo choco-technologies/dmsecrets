@@ -17,8 +17,10 @@ unlock itself through a passphrase provider the caller supplies. See
 [docs/api-reference.md](docs/api-reference.md) and the file format in
 [docs/format.md](docs/format.md).
 
-**Status:** the interface (`include/`) and the path resolution are done; the
-vault itself is TODO (every other function returns `-ENOSYS`).
+**Status:** implemented and tested (20 steps: records, unlocking, a wrong
+passphrase, a tampered file, a write cut short, a new passphrase, the
+passphrase provider, limits). The key derivation is 20000 PBKDF2-HMAC-SHA256
+iterations; a vault holds 4096 bytes of records.
 
 ## Building
 
