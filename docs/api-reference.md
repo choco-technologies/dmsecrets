@@ -49,6 +49,27 @@ operation needs it, by asking the provider (a console prompt, a key derived
 from the device, a service) - so a library can use its vault without knowing how
 the passphrase is obtained. Without one, the caller calls `unlock`.
 
+## Unlocking with the device secret
+
+`DMSECRETS_OPEN_DEVICE_KEY` (a flag of the config): the vault unlocks itself, the first time
+an operation needs it, with a key derived from the **device secret** - the node `/dev/devkey`
+(dmdevfs serves what dmod-boot was built with: `DMBOOT_DEVICE_SECRET` /
+`DMBOOT_DEVICE_SECRET_FILE`; `DMSECRETS_DEVKEY_PATH` in the environment names another node):
+HKDF-SHA256 of the secret, labelled `dmsecrets/v1/<domain>` (`default` without a domain), as
+64 hex characters used as the vault's passphrase. So nothing is typed and each domain has a key
+of its own; a new vault is created under that key. A service that must connect on its own (the
+Wi-Fi one) opens its vault so.
+
+- The vault is then as safe as the device secret is: it protects a card, or a copy of the vault
+  file, not a running system - anything that can read `/dev/devkey` (permissions on the node,
+  once the system has users) can derive the key.
+- A firmware built with another secret cannot open the vaults of the old one (`-EACCES`): they
+  are made again - or kept by also giving a passphrase provider and `change_passphrase`.
+- Where the node is not there (no device secret in the firmware) the passphrase provider is
+  asked, when there is one; without one the operation returns `-ENODEV`.
+- Options can be mixed per vault: a provider for a vault opened by a person at the shell, the
+  device key for one opened by a service.
+
 ## Records
 
 | Function | |

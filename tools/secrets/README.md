@@ -3,7 +3,7 @@
 The secrets of the shell, on dmsecrets: encrypted vaults of named records.
 
 ```
-secrets [-f FILE] [-d DOMAIN] COMMAND [ARGS]
+secrets [-f FILE] [-d DOMAIN] [-k] COMMAND [ARGS]
   create               make a new vault (asks for its passphrase twice)
   list [PREFIX]        the names of the records
   get [-x] NAME        a value as text (-x: in hex, for binary values)
@@ -29,5 +29,8 @@ Value:
 wifi/Home
 ```
 
-The passphrase is asked for (not echoed) when the vault needs it. Creating a
+The passphrase is asked for (not echoed) when the vault needs it. With `-k` the vault
+unlocks with a key derived from the device secret (`/dev/devkey`, labelled by the
+domain) and nothing is asked - create it with `-k` too, and the system's own services
+can open it the same way (see `DMSECRETS_OPEN_DEVICE_KEY`). Creating a
 vault needs an entropy source for dmcrypto (its driver's `entropy=`).

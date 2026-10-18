@@ -610,6 +610,8 @@ DMOD_TEST_STEP(a_vault_without_the_flag_ignores_the_device_secret)
     DMOD_TEST_EXPECT_EQ(dmsecrets_get(v, "k", value, sizeof(value), &length), -EACCES);      /* locked: nobody unlocks it */
     dmsecrets_close(v);
     forget_devkey();
+}
+
 /* ---- The secrets tool (run as a module; it asks for a passphrase only once a vault is opened) ---- */
 
 DMOD_TEST_STEP(tool_prints_its_usage)

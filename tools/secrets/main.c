@@ -17,7 +17,7 @@
 
 static void print_usage(const char *name)
 {
-    Dmod_Printf("Usage: %s [-f FILE] [-d DOMAIN] COMMAND [ARGS]\n", name);
+    Dmod_Printf("Usage: %s [-f FILE] [-d DOMAIN] [-k] COMMAND [ARGS]\n", name);
     Dmod_Printf("  list [PREFIX]        the names of the records (those that start with PREFIX)\n");
     Dmod_Printf("  get [-x] NAME        a record's value as text; -x: in hex (for binary values)\n");
     Dmod_Printf("  set NAME [VALUE]     stores a record; without VALUE it asks for it (not echoed)\n");
@@ -26,6 +26,7 @@ static void print_usage(const char *name)
     Dmod_Printf("  passwd               changes the vault's passphrase\n");
     Dmod_Printf("  info                 where the vault is and how many records it has\n");
     Dmod_Printf("The vault: FILE, else DMSECRETS_<DOMAIN>_PATH (with -d DOMAIN), else DMSECRETS_PATH.\n");
+    Dmod_Printf("-k: unlock with the key of the device secret (/dev/devkey, labelled by DOMAIN) - no passphrase.\n");
 }
 
 /* Reads a line from the terminal without echoing it: false when it cannot be read.
@@ -112,14 +113,30 @@ static const char *explain(int result)
 int main(int argc, char **argv)
 {
     const char *path = NULL, *domain = NULL;
+    uint32_t extra_flags = 0;
     int i = 1;
 
-    for (; i + 1 < argc && argv[i][0] == '-' && (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "-d") == 0); i += 2)
+    while (i < argc && argv[i][0] == '-')
     {
-        if (strcmp(argv[i], "-f") == 0)
+        if (strcmp(argv[i], "-k") == 0)
+        {
+            extra_flags |= DMSECRETS_OPEN_DEVICE_KEY;
+            i++;
+        }
+        else if (i + 1 < argc && strcmp(argv[i], "-f") == 0)
+        {
             path = argv[i + 1];
-        else
+            i += 2;
+        }
+        else if (i + 1 < argc && strcmp(argv[i], "-d") == 0)
+        {
             domain = argv[i + 1];
+            i += 2;
+        }
+        else
+        {
+            break;
+        }
     }
     const char *command = (i < argc) ? argv[i] : "help";
     const char *arg1 = (i + 1 < argc) ? argv[i + 1] : NULL;
@@ -160,7 +177,7 @@ int main(int argc, char **argv)
     }
     config.path = path;
     config.domain = domain;
-    config.flags = creating ? DMSECRETS_OPEN_CREATE : 0;
+    config.flags = (creating ? DMSECRETS_OPEN_CREATE : 0) | extra_flags;
     config.passphrase_provider = passphrase_provider;
 
     int ret = dmsecrets_open(&config, &vault);
