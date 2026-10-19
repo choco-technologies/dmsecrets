@@ -13,7 +13,9 @@ encrypted (AES-256-GCM, key from a passphrase by PBKDF2) with dmcrypto. A
 program can open several vaults - one per library, per purpose, per place - and
 a library gives the path of its own or none: the path then comes from the
 environment (`DMSECRETS_<DOMAIN>_PATH`, then `DMSECRETS_PATH`). A vault can
-unlock itself through a passphrase provider the caller supplies. See
+unlock itself through a passphrase provider the caller supplies, or - for a service that
+has nobody to ask - with a key derived from the **device secret** (`DMSECRETS_OPEN_DEVICE_KEY`,
+the node `/dev/devkey` that dmdevfs serves from what dmod-boot was built with). See
 [docs/api-reference.md](docs/api-reference.md) and the file format in
 [docs/format.md](docs/format.md).
 
